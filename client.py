@@ -1,4 +1,5 @@
 import socket, re, os, argparse
+from tqdm import tqdm
 from bs4 import BeautifulSoup
 
 parser = argparse.ArgumentParser(description="A simple HTTP client that supports GET, HEAD and PUT requests")
@@ -26,16 +27,15 @@ s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
 
 def find_html_code(response: bytes) -> str:
     response = response.decode(FORMAT, errors="ignore")
-    html_code = re.finditer("<\/?html", response)
-    # get the postions of the <html> tags
-    positions = [x.span() for x in re.finditer("<\/?html", response)]
+    # get the postions of the <html> tags, (?i) makes it case insensitive
+    positions = [x.span() for x in re.finditer("(?i)<\/?html", response)]
     start, end = positions[0][0], positions[1][1]+1
-    print(response[start:end])
     return response[start:end]
 
-def find_image_url(html: str) -> str:
+def find_image_urls(html: str) -> str:
     soup = BeautifulSoup(html, 'html.parser')
-    links = [i["src"] for i in soup.find_all('img')]
+    links = [l["src"] for l in soup.find_all('img')]
+    print(links)
     return links
 
 def change_img_tags(html: str, image_urls: list) -> str:
@@ -72,33 +72,38 @@ def main():
             response = b""
             if request_length:
                 response = s.recv(request_length)
-                print(response, "\n\n")
             else:
                 while True:
                     data = s.recv(4096)
                     response += data
                     # Check when the end of the request is recieved
-                    if data.endswith(CRLF.encode(FORMAT)) or not data:
+                    if (data.endswith(CRLF.encode(FORMAT))
+                    or not data 
+                    or re.search(b"(?i)<\/html>", data)):
+                        print('here')
                         break
-                    print(response)
-            # Split of the headers from the html file
+                    print(data.decode(FORMAT))
+            print(response)
+            # Split of the headers from the html file and get all the image urls
             html = find_html_code(response)
-            image_urls = find_image_url(html)
+            image_urls = find_image_urls(html)
             # If there are image links on the page, download them and change the path in the html code
             if image_urls:
-                for url in image_urls:
-                    request = f"{args.command} {url} HTTP/1.1\r\nHost:{args.uri}\r\nAccept:text/html\r\n\r\n"
-                    url = "images/" + url.split("/")[-1]
-                    os.makedirs("images", exist_ok=True)
+                for url in tqdm(image_urls, "Extracting images"):
+                    if not url.startswith('/'): url = '/' + url
+                    request = f"{args.command} {url} HTTP/1.1\r\nHost:{args.uri}\r\n\r\n"
                     s.sendall(request.encode())
-                    response = s.recv(4096)
+                    response = s.recv(1000)
                     headers =  response.split(b'\r\n\r\n')[0]
                     image = response[len(headers)+4:]
+                    url = "images/" + url.split("/")[-1]
+                    os.makedirs("images", exist_ok=True)
                     with open(url, "wb") as image_file:
                         image_file.write(image)
 
                 html = change_img_tags(html, image_urls)
 
+            s.close()
             with open ("index.html", "w") as html_file:
                 html_file.write(html)
 

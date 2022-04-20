@@ -80,9 +80,7 @@ def main():
                     if (data.endswith(CRLF.encode(FORMAT))
                     or not data 
                     or re.search(b"(?i)<\/html>", data)):
-                        print('here')
                         break
-                    print(data.decode(FORMAT))
             print(response)
             # Split of the headers from the html file and get all the image urls
             html = find_html_code(response)

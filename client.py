@@ -6,9 +6,9 @@ parser = argparse.ArgumentParser(description="A simple HTTP client that supports
 
 parser.add_argument(
     "--command",
-    choices=["HEAD", "GET", "PUT"],
+    choices=["HEAD", "GET", "POST", "PUT"],
     type=str,
-    help="Type of HTTP command, possibilities: HEAD, GET, PUT",
+    help="Type of HTTP command, possibilities: HEAD, GET, POST, PUT",
     required=True,
 )
 parser.add_argument(
@@ -33,7 +33,6 @@ def find_html_code(response: bytes) -> str:
 def find_image_urls(html: str) -> str:
     soup = BeautifulSoup(html, 'html.parser')
     links = [l["src"] for l in soup.find_all('img')]
-    print(links)
     return links
 
 def change_img_tags(html: str, image_urls: list) -> str:
@@ -43,8 +42,8 @@ def change_img_tags(html: str, image_urls: list) -> str:
     return html
 
 
-def get_request_length_and_transfer_encoding(uri: str, s: socket) -> int:
-    request = f"HEAD / HTTP/1.1\r\nHost:{args.uri}\r\nAccept:text/html\r\n\r\n"
+def get_request_length_and_transfer_encoding(url: str, s: socket) -> int:
+    request = f"HEAD {url} HTTP/1.1\r\nHost:{args.uri}\r\nAccept:text/html\r\n\r\n"
     s.send(request.encode())
     response = b""
     while True:
@@ -52,7 +51,6 @@ def get_request_length_and_transfer_encoding(uri: str, s: socket) -> int:
         response += data
         if not data or data.decode(FORMAT).endswith(CRLF): break
     header_length = len(response)
-    print(header_length)
     response = response.decode(FORMAT)
     # regex searches for the Content-Length response in the response and gets the corresponding value
     content_lengths = re.findall("Content-Length:\s+\d+\s+", response)
@@ -77,21 +75,19 @@ def power_of_two(target):
 def main():
     # create an INET, STREAMing socket
     s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-    s.connect((args.uri, args.port))
+    url = args.uri[:args.uri.find("/")] if args.uri.find("/") != -1 else args.uri
+    s.connect((url, args.port))
     filename = args.uri[args.uri.find("/") + 1:]
 
     match args.command:
         case "GET":
             # Get the Content-Length and Transer-Encoding from the header
-            request_length, header_length, transfer_encoding = get_request_length_and_transfer_encoding(args.uri, s)
-            print(request_length)
+            request_length, header_length, transfer_encoding = get_request_length_and_transfer_encoding("/", s)
             request = f"{args.command} / HTTP/1.1\r\nHost:{args.uri}\r\n\r\n"
             s.sendall(request.encode())
             if request_length and request_length < 10000 and not transfer_encoding:
                 response = s.recv(request_length + header_length)
-                print('response', response)
             elif transfer_encoding == "chunked" or not request_length or request_length >= 10000:
-                print('here')
                 response = b""
                 while True:
                     data = s.recv(4096)
@@ -125,8 +121,16 @@ def main():
                 html_file.write(html)
 
         case "POST":
-            request = f"{args.command} / HTTP/1.1\r\nHost:{args.uri}\r\nAccept:text/html\r\n\r\n"
-            pass
+            filename = "/" if args.uri.find("/") == -1 else args.uri.split("/")[1:][0]
+            user_input = input("What do you want to send to the server?\n")
+            request = f"{args.command} {filename} HTTP/1.1\r\nHost:{args.uri}\r\nAccept:text/html\r\n\r\n {user_input}"
+            s.send(request.encode(FORMAT))
+
+        case "PUT":
+            filename = "/" if args.uri.find("/") == -1 else args.uri.split("/")[1:][0]
+            user_input = input("What do you want to send to the server?\n")
+            request = f"{args.command} {filename} HTTP/1.1\r\nHost:{args.uri}\r\nAccept:text/html\r\n\r\n {user_input}"
+            s.send(request.encode(FORMAT))
 
         case "HEAD":
             request = f"{args.command} / HTTP/1.1\r\nHost:{args.uri}\r\nAccept:text/html\r\n\r\n"

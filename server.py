@@ -3,6 +3,7 @@ import threading
 import datetime
 
 FORMAT = "utf-8"
+IMAGE_FILES = ("jpg", "gif", "png")
 
 def handle_client(conn, addr):
     print(f"[NEW CONNECTION] {addr} connected.")
@@ -26,9 +27,12 @@ def handle_client(conn, addr):
                     if filename == "/": filename = "/index.html"
             
                     print(filename)
-                    # Don't select the leading /
                     try:
-                        f = open(filename[1:])
+                        if filename[-3:] in IMAGE_FILES:
+                            f = open(filename[1:], 'rb')
+                        else:
+                            # Don't select the leading /
+                            f = open(filename[1:])
                     except:
                         # Send HTTP response message for file not found
                         conn.send("HTTP/1.1 404 File Not Found!\r\n\r\n".encode(FORMAT))
@@ -37,11 +41,16 @@ def handle_client(conn, addr):
                         break
 
                     outputdata = f.read()
+                    print(outputdata)
                     # Send the HTTP response header line to the connection socket
                     conn.send(f"HTTP/1.1 200 OK\r\nContent-Length: {len(outputdata)}\r\nContent-Type: text/html\r\ndate: {datetime.datetime.now()}\r\n\r\n".encode(FORMAT))
      
                     # Send all the requested data
                     for i in range(0, len(outputdata)):  
+                        # When the file is a image it's already in bytes, only encode when it's not an image
+                        if filename[-3:] in IMAGE_FILES:
+                            conn.send(outputdata[i])
+                        else:
                             conn.send(outputdata[i].encode(FORMAT))
                     conn.send("\r\n\r\n".encode(FORMAT))
                     break
@@ -59,7 +68,7 @@ def handle_client(conn, addr):
 def start():
     s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     s.bind((socket.gethostname(), 1234))
-    s.listen(5)
+    s.listen(10)
     print(f"[LISTENING] Server is listening on {socket.gethostname()}")
     while True:
         conn, addr = s.accept()
